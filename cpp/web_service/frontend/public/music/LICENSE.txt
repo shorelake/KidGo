@@ -1,0 +1,11 @@
+Little Steps, Bubble Waltz, Sunny Path, Cotton Clouds
+Original generated music for KataGo Web
+
+This composition and synthesized recording were created for this project.
+No external samples or existing musical works were used.
+To the extent copyright applies, this asset is dedicated to the public domain
+under CC0 1.0: https://creativecommons.org/publicdomain/zero/1.0/
+
+Reproduce the WAV using: python3 -m web_service.generate_music
+Four original compositions at 92-116 BPM with different melodies and timbres.
+See tracks.json for titles, filenames and durations. Seamless mono loops.

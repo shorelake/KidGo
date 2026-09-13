@@ -1,0 +1,20 @@
+[Unit]
+Description=KataGo Web analysis and practice
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/data/hubin/repos/KataGo/cpp
+ExecStart=/bin/bash /data/hubin/repos/KataGo/cpp/run_web_svr.sh
+Environment=KATAGO_CONDA_ENV=go
+Environment=KATAGO_HOST=0.0.0.0
+Environment=KATAGO_PORT=3000
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
