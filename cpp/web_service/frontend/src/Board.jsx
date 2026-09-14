@@ -161,7 +161,11 @@ export default function Board({
                 )
               )}
               {!stone && candidate && pending !== move && (
-                <g>
+                <g className="recommendation-marker" data-player={player}>
+                  <title>
+                    {player === "B" ? "黑方" : "白方"}推荐 {move}，候选{" "}
+                    {candidate.order + 1}
+                  </title>
                   <circle
                     cx={x}
                     cy={y}
@@ -178,6 +182,17 @@ export default function Board({
                   >
                     {candidate.order + 1}
                   </text>
+                  <circle
+                    className="recommendation-ring"
+                    cx={x}
+                    cy={y}
+                    r={step * 0.46}
+                    fill="none"
+                    stroke={player === "B" ? "#17221c" : "#fff"}
+                    strokeWidth={step * 0.055}
+                    strokeDasharray={`${step * 0.09} ${step * 0.055}`}
+                    pointerEvents="none"
+                  />
                 </g>
               )}
               {!stone && pending === move && (

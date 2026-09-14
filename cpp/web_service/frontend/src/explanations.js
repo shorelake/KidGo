@@ -40,7 +40,7 @@ export function positionExplanation(record, cursor, analysis) {
   }
   if (Number.isFinite(root.winrate))
     lines.push(
-      `黑棋胜率 ${(root.winrate * 100).toFixed(1)}% 表示模型对最终胜负的估计，不是棋盘占地比例；即使胜率接近 100%，也仍需正确应对。`,
+      `${colorName(player)}胜率 ${((player === "W" ? 1 - root.winrate : root.winrate) * 100).toFixed(1)}% 表示模型对最终胜负的估计，不是棋盘占地比例；即使胜率接近 100%，也仍需正确应对。`,
     );
   if (!best)
     return [...lines, "本次搜索尚无候选落点，可增加搜索次数后重新分析。"];

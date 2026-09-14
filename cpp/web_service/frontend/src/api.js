@@ -31,6 +31,13 @@ export const positionOf = (game, turn = game.moves.length) =>
 export const letters = "ABCDEFGHJKLMNOPQRST";
 export const percent = (n) =>
   Number.isFinite(n) ? (n * 100).toFixed(1) + "%" : "--";
+export const playerWinrate = (value, player) =>
+  Number.isFinite(value) ? (player === "W" ? 1 - value : value) : undefined;
+export const playerScore = (value, player) => {
+  if (!Number.isFinite(value)) return "--";
+  const lead = player === "W" ? -value : value;
+  return (lead >= 0 ? "+" : "") + lead.toFixed(1);
+};
 export const score = (n) =>
   Number.isFinite(n)
     ? (n >= 0 ? "黑 +" : "白 +") + Math.abs(n).toFixed(1)

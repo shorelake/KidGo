@@ -41,7 +41,14 @@ import {
 } from "./stoneSound";
 import { isHumanVictory } from "./victoryMusic";
 import { namePrefixes, nextGameName } from "./naming";
-import { api, emptyGame, positionOf, percent, score } from "./api";
+import {
+  api,
+  emptyGame,
+  positionOf,
+  percent,
+  playerWinrate,
+  playerScore,
+} from "./api";
 import "./style.css";
 
 const newRecord = () => ({
@@ -397,8 +404,21 @@ function App() {
       analyze("bot");
       return;
     }
-    if (auto && mode === "review" && lastAutoKey.current !== analysisKey()) {
-      const timer = setTimeout(() => analyze("single"), 350);
+    const humanHint =
+      mode !== "review" &&
+      atEnd &&
+      !paused &&
+      !position.ended &&
+      !record.result &&
+      position.player === human;
+    if (
+      (humanHint || (auto && mode === "review")) &&
+      lastAutoKey.current !== analysisKey()
+    ) {
+      const timer = setTimeout(
+        () => analyze(humanHint ? "hint" : "single"),
+        350,
+      );
       return () => clearTimeout(timer);
     }
   }, [
@@ -462,7 +482,7 @@ function App() {
     task.current = null;
     setJob(null);
     if (snapshot.error) {
-      setPaused(true);
+      if (current.kind !== "hint") setPaused(true);
       fail(new Error(snapshot.error));
       return;
     }
@@ -509,7 +529,7 @@ function App() {
   }
   async function analyze(kind = "single") {
     if (task.current || moving.current || submitting.current) return;
-    if (isPhone && kind !== "bot") setPhonePanel("analysis");
+    if (isPhone && kind !== "bot" && kind !== "hint") setPhonePanel("analysis");
     const currentRecord = recordRef.current;
     const nextPlayer = cursorRef.current
       ? currentRecord.moves[cursorRef.current - 1][0] === "B"
@@ -526,8 +546,9 @@ function App() {
     const turn = cursorRef.current,
       epoch = generation.current;
     submitting.current = true;
-    if (kind === "single") lastAutoKey.current = analysisKey();
-    setBusy(true);
+    if (kind === "single" || kind === "hint")
+      lastAutoKey.current = analysisKey();
+    if (kind !== "hint") setBusy(true);
     setError("");
     try {
       const base = positionOf(
@@ -540,7 +561,9 @@ function App() {
         maxVisits:
           kind === "bot"
             ? (levels[currentRecord.aiLevel] || levels.standard).visits
-            : Number(stateRef.current.visits),
+            : kind === "hint"
+              ? Math.max(32, Number(stateRef.current.visits))
+              : Number(stateRef.current.visits),
         includeOwnership: stateRef.current.ownership,
         ...(kind === "whole"
           ? {
@@ -563,11 +586,11 @@ function App() {
         .then((snapshot) => snapshotHandler.current(snapshot))
         .catch(() => {});
     } catch (e) {
-      setPaused(true);
+      if (kind !== "hint") setPaused(true);
       fail(e);
     } finally {
       submitting.current = false;
-      setBusy(moving.current);
+      if (kind !== "hint") setBusy(moving.current);
     }
   }
   async function play(move, bot = false) {
@@ -999,6 +1022,8 @@ function App() {
     setDirty(true);
   }
   const analysis = live?.turnNumber === cursor ? live : record.analyses[cursor];
+  const recommendationPlayer = position.player;
+  const recommendationName = recommendationPlayer === "B" ? "黑方" : "白方";
   const candidates = [...(analysis?.moveInfos || [])].sort(
       (a, b) => a.order - b.order,
     ),
@@ -1015,7 +1040,7 @@ function App() {
   const canPlay =
     !(isPhone && phonePanel) &&
     !busy &&
-    !job &&
+    (!job || job.kind === "hint") &&
     !preview &&
     (mode === "review" ||
       (!paused &&
@@ -1025,13 +1050,16 @@ function App() {
         cursor === record.moves.length));
   const plotted = Object.entries(record.analyses)
     .map(([t, a]) => ({ t: Number(t), ...a.rootInfo }))
+    .filter((p) => p.t >= 1)
     .sort((a, b) => a.t - b.t);
+  const chartX = (turn) =>
+    12 + ((Math.max(1, turn) - 1) / Math.max(1, record.moves.length - 1)) * 376;
   const maxScore = Math.max(10, ...plotted.map((p) => Math.abs(p.scoreLead)));
   const graphPath = (key) =>
     plotted
       .map(
         (p, i) =>
-          `${i ? "L" : "M"}${12 + (p.t / Math.max(1, record.moves.length)) * 376} ${key === "winrate" ? 12 + (1 - p.winrate) * 76 : 50 - (p.scoreLead / maxScore) * 38}`,
+          `${i ? "L" : "M"}${chartX(p.t)} ${key === "winrate" ? 12 + (1 - p.winrate) * 76 : 50 - (p.scoreLead / maxScore) * 38}`,
       )
       .join(" ");
 
@@ -1310,7 +1338,9 @@ function App() {
                     resultLabel(record.result)) ||
                     (position.ended
                       ? "双方停一手"
-                      : `第 ${cursor} 手${record.moves[cursor - 1]?.[1] === "pass" ? ` · ${record.moves[cursor - 1][0] === "B" ? "黑" : "白"}方停一手` : ""}`)}
+                      : cursor === 0
+                        ? "初始局面"
+                        : `第 ${cursor} 手${record.moves[cursor - 1]?.[1] === "pass" ? ` · ${record.moves[cursor - 1][0] === "B" ? "黑" : "白"}方停一手` : ""}`)}
                 </span>
                 <div>
                   <small>提 {position.captures.W}</small>
@@ -1348,6 +1378,14 @@ function App() {
                     终局计分
                   </button>
                 )}
+              {!preview && candidates.length > 0 && (
+                <div
+                  className="recommendation-label"
+                  data-player={recommendationPlayer}
+                >
+                  {recommendationName}推荐 · 第 {cursor + 1} 手
+                </div>
+              )}
               <Board
                 size={record.size}
                 board={previewBoard?.board || position.board}
@@ -1554,6 +1592,7 @@ function App() {
                   role="img"
                   aria-label="胜率与目差曲线"
                   onClick={(e) => {
+                    if (!record.moves.length) return;
                     const transform = e.currentTarget.getScreenCTM();
                     if (!transform) return;
                     // Include viewBox scaling and letterboxing in the hit test.
@@ -1563,11 +1602,13 @@ function App() {
                     ).matrixTransform(transform.inverse());
                     navigate(
                       Math.max(
-                        0,
+                        1,
                         Math.min(
                           record.moves.length,
                           Math.round(
-                            ((point.x - 12) / 376) * record.moves.length,
+                            1 +
+                              ((point.x - 12) / 376) *
+                                Math.max(0, record.moves.length - 1),
                           ),
                         ),
                       ),
@@ -1596,9 +1637,8 @@ function App() {
                       {plotted.map((p) => (
                         <circle
                           key={p.t}
-                          cx={
-                            12 + (p.t / Math.max(1, record.moves.length)) * 376
-                          }
+                          cx={chartX(p.t)}
+                          data-turn={p.t}
                           cy={12 + (1 - p.winrate) * 76}
                           r="2"
                           fill="#218062"
@@ -1606,18 +1646,22 @@ function App() {
                       ))}
                     </>
                   )}
-                  <line
-                    x1={12 + (cursor / Math.max(1, record.moves.length)) * 376}
-                    x2={12 + (cursor / Math.max(1, record.moves.length)) * 376}
-                    y1="8"
-                    y2="92"
-                    stroke="#8c9b92"
-                  />
+                  {cursor > 0 && (
+                    <line
+                      x1={chartX(cursor)}
+                      x2={chartX(cursor)}
+                      y1="8"
+                      y2="92"
+                      stroke="#8c9b92"
+                    />
+                  )}
                   <text x="13" y="99">
-                    0
+                    {record.moves.length ? "第 1 手" : "尚未落子"}
                   </text>
                   <text x="382" y="99" textAnchor="end">
-                    {record.moves.length}
+                    {record.moves.length > 1
+                      ? `第 ${record.moves.length} 手`
+                      : ""}
                   </text>
                 </svg>
               </div>
@@ -1632,20 +1676,32 @@ function App() {
                     onClick={() => setPhonePanel(null)}
                   />
                 </span>
-                <span>黑方视角</span>
+                <span className="analysis-perspective">
+                  {recommendationName}视角 · 下一手
+                </span>
               </div>
               <div className="metrics">
                 <div>
-                  <small>黑方胜率</small>
-                  <strong>{percent(root?.winrate)}</strong>
+                  <small>{recommendationName}胜率</small>
+                  <strong>
+                    {percent(
+                      playerWinrate(root?.winrate, recommendationPlayer),
+                    )}
+                  </strong>
                 </div>
                 <div>
-                  <small>预计目差</small>
-                  <strong>{score(root?.scoreLead)}</strong>
+                  <small>{recommendationName}预计目差</small>
+                  <strong>
+                    {playerScore(root?.scoreLead, recommendationPlayer)}
+                  </strong>
                 </div>
               </div>
               <div className="winrate-bar">
-                <div style={{ width: `${(root?.winrate ?? 0.5) * 100}%` }} />
+                <div
+                  style={{
+                    width: `${(playerWinrate(root?.winrate, recommendationPlayer) ?? 0.5) * 100}%`,
+                  }}
+                />
               </div>
               <div className="analysis-controls">
                 <label>
@@ -1727,7 +1783,7 @@ function App() {
               <div className="candidate-table">
                 <div className="candidate-head">
                   <span>推荐落点</span>
-                  <span>黑方胜率</span>
+                  <span>{recommendationName}胜率</span>
                   <span>目差</span>
                   <span>搜索</span>
                 </div>
@@ -1748,8 +1804,12 @@ function App() {
                       <i className={i === 0 ? "best" : ""}>{i + 1}</i>
                       <b>{m.move === "pass" ? "停一手" : m.move}</b>
                     </span>
-                    <span>{percent(m.winrate)}</span>
-                    <span>{score(m.scoreLead)}</span>
+                    <span>
+                      {percent(playerWinrate(m.winrate, recommendationPlayer))}
+                    </span>
+                    <span>
+                      {playerScore(m.scoreLead, recommendationPlayer)}
+                    </span>
                     <span>{m.visits}</span>
                   </button>
                 ))}
