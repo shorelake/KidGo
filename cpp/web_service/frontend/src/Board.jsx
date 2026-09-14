@@ -13,6 +13,8 @@ export default function Board({
   preview = false,
   player = "B",
   positionKey,
+  onMark,
+  deadStones = [],
 }) {
   const [pending, setPending] = useState(null);
   useEffect(() => setPending(null), [board, disabled, preview, positionKey]);
@@ -20,6 +22,10 @@ export default function Board({
     margin = (600 - step * (size - 1)) / 2,
     xy = (r, c) => [margin + c * step, margin + r * step];
   function choose(move, stone) {
+    if (onMark) {
+      if (!disabled && stone) onMark(move);
+      return;
+    }
     if (disabled || stone) return;
     if (pending === move) {
       setPending(null);
@@ -114,12 +120,21 @@ export default function Board({
               {stone && (
                 <circle
                   className="stone"
+                  opacity={deadStones.includes(move) ? 0.3 : 1}
                   cx={x}
                   cy={y + 0.6}
                   r={step * 0.455}
                   fill={`url(#${stone === "B" ? "black" : "white"}-stone)`}
                   stroke={stone === "B" ? "#101919" : "#b7bbaa"}
                   strokeWidth="0.6"
+                />
+              )}
+              {stone && deadStones.includes(move) && (
+                <path
+                  d={`M${x - step * 0.2} ${y - step * 0.2}L${x + step * 0.2} ${y + step * 0.2}M${x + step * 0.2} ${y - step * 0.2}L${x - step * 0.2} ${y + step * 0.2}`}
+                  stroke="#be493e"
+                  strokeWidth="3"
+                  pointerEvents="none"
                 />
               )}
               {stone && numbers[move] ? (
@@ -201,9 +216,11 @@ export default function Board({
                 fill="transparent"
                 role="button"
                 aria-label={move}
-                aria-disabled={disabled || !!stone}
-                aria-pressed={pending === move}
-                tabIndex={disabled || stone ? -1 : 0}
+                aria-disabled={disabled || (onMark ? !stone : !!stone)}
+                aria-pressed={
+                  onMark ? deadStones.includes(move) : pending === move
+                }
+                tabIndex={disabled || (onMark ? !stone : stone) ? -1 : 0}
                 className={!disabled && !stone ? "intersection" : ""}
                 onClick={() => choose(move, stone)}
                 onKeyDown={(e) => {

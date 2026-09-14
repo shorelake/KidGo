@@ -1063,6 +1063,39 @@ footer > span:nth-child(2) {
   min-width: 0;
   border-bottom: 1px solid #e2e8e3;
 }
+.practice-progress {
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 8px 0;
+}
+.game-outcome {
+  padding: 12px 0;
+  color: #186848;
+  font-size: 16px;
+  font-weight: 600;
+}
+.scoring-form .board {
+  width: 100%;
+  max-height: 48vh;
+  aspect-ratio: 1;
+}
+.scoring-form p {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.scoring-form .score-total {
+  font-size: 16px;
+  font-weight: 600;
+}
+.scoring-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+}
+.play-settings {
+  flex-wrap: wrap;
+}
 .analysis-explanation {
   border-top: 1px solid #dce5df;
   margin-top: 20px;
@@ -1269,6 +1302,15 @@ footer > span:nth-child(2) {
   font-size: 11px;
 }
 @media (max-width: 420px) {
+  header {
+    height: auto;
+    min-height: 66px;
+    flex-wrap: wrap;
+    padding: 10px 14px;
+  }
+  .header-right {
+    margin-left: auto;
+  }
   .header-right .engine-status {
     display: none;
   }
@@ -1283,4 +1325,99 @@ footer > span:nth-child(2) {
 .board {
   user-select: none;
   -webkit-user-select: none;
+}
+.history-heading .history-close {
+  display: inline-flex;
+}
+@media (min-width: 1101px) {
+  .application-layout.history-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .history-collapsed .history-sidebar {
+    display: none;
+  }
+  .history-collapsed .history-toggle {
+    display: inline-flex;
+  }
+}
+.mobile-analysis-dock,
+.mobile-panel-close {
+  display: none;
+}
+.modal-backdrop {
+  z-index: 40;
+}
+.victory-music-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  margin-top: 12px;
+}
+@media (max-width: 600px) {
+  .workbench {
+    padding-bottom: calc(76px + env(safe-area-inset-bottom));
+  }
+  .workspace .review-chart,
+  .workspace > .analysis-aside {
+    display: none;
+  }
+  .mobile-analysis-dock {
+    display: flex;
+    position: fixed;
+    z-index: 15;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    left: 14px;
+    right: 14px;
+    height: 44px;
+    background: rgba(246, 250, 247, 0.94);
+    backdrop-filter: blur(12px);
+    border: 1px solid #bccfc3;
+    border-radius: 6px;
+    box-shadow: 0 3px 16px #193d2420;
+  }
+  .mobile-analysis-dock button {
+    flex: 1;
+    gap: 8px;
+    justify-content: center;
+    border: 0;
+    background: transparent;
+    border-radius: 4px;
+  }
+  .mobile-analysis-dock button.selected {
+    background: #dcece2;
+    color: #195c40;
+  }
+  .workspace.phone-panel-chart .review-chart,
+  .workspace.phone-panel-analysis > .analysis-aside {
+    display: block;
+    position: fixed;
+    z-index: 14;
+    left: 14px;
+    right: 14px;
+    bottom: calc(66px + env(safe-area-inset-bottom));
+    max-height: min(65dvh, 620px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    margin: 0;
+    padding: 14px;
+    border: 1px solid #becfc3;
+    border-radius: 6px;
+    background: rgba(247, 251, 248, 0.91);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 -4px 22px #1b352420;
+  }
+  .mobile-panel-close {
+    display: inline-flex;
+    margin-left: auto;
+  }
+  .phone-panel-chart .review-chart > .section-heading {
+    flex-wrap: wrap;
+  }
+  .phone-panel-chart .chart-legend {
+    width: 100%;
+  }
+  .phone-panel-analysis .empty-analysis {
+    min-height: 80px;
+  }
 }

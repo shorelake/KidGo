@@ -17,7 +17,12 @@ function preferences() {
     return {};
   }
 }
-export default function Music({ onError }) {
+export default function Music({
+  onError,
+  victoryEnabled,
+  onVictoryToggle,
+  celebrating,
+}) {
   const audio = useRef(null),
     panel = useRef(null),
     intent = useRef(false);
@@ -26,7 +31,7 @@ export default function Music({ onError }) {
     [mode, setMode] = useState(() =>
       preferences().mode === "shuffle" ? "shuffle" : "repeat",
     );
-  const [playing, setPlaying] = useState(false),
+  const [playing, setPlaying] = useState(() => preferences().enabled !== false),
     [open, setOpen] = useState(false),
     [volume, setVolume] = useState(() => {
       const v = Number(preferences().volume ?? 0.2);
@@ -55,51 +60,61 @@ export default function Music({ onError }) {
     };
   }, []);
   useEffect(() => {
-    if (audio.current) audio.current.volume = volume;
+    if (audio.current) audio.current.volume = volume * (celebrating ? 0.2 : 1);
     try {
       localStorage.setItem(
         "katago-music",
-        JSON.stringify({ track, mode, volume }),
+        JSON.stringify({ track, mode, volume, enabled: playing }),
       );
     } catch {}
-  }, [track, mode, volume]);
+  }, [track, mode, volume, celebrating, playing]);
+  function startPlayback() {
+    const element = audio.current;
+    if (!intent.current || document.hidden || !element?.getAttribute("src"))
+      return;
+    element.play().catch((e) => {
+      if (!intent.current || element !== audio.current) return;
+      if (e.name !== "AbortError" && e.name !== "NotAllowedError") {
+        setPlaying(false);
+        onError(new Error("音乐暂时无法播放"));
+      }
+    });
+  }
   useEffect(() => {
-    if (intent.current && !document.hidden && audio.current)
-      audio.current.play().catch((e) => {
-        if (e.name !== "AbortError") {
-          setPlaying(false);
-          onError(new Error("音乐暂时无法播放"));
-        }
-      });
-  }, [track, tracks]);
+    if (playing) startPlayback();
+    else audio.current?.pause();
+  }, [track, tracks, playing]);
   useEffect(() => {
     const visibility = () => {
       if (document.hidden) audio.current?.pause();
-      else if (intent.current)
-        audio.current?.play().catch(() => setPlaying(false));
+      else startPlayback();
     };
     const dismiss = (e) => {
       if (!panel.current?.contains(e.target)) setOpen(false);
+      if (audio.current?.paused) startPlayback();
+    };
+    const keyboard = () => {
+      if (audio.current?.paused) startPlayback();
     };
     document.addEventListener("visibilitychange", visibility);
     document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("keydown", keyboard);
     return () => {
       document.removeEventListener("visibilitychange", visibility);
       document.removeEventListener("pointerdown", dismiss);
+      document.removeEventListener("keydown", keyboard);
     };
   }, []);
   async function toggle() {
     if (playing) {
+      intent.current = false;
       audio.current.pause();
       setPlaying(false);
       return;
     }
-    try {
-      await audio.current.play();
-      setPlaying(true);
-    } catch {
-      onError(new Error("音乐暂时无法播放，请重试"));
-    }
+    intent.current = true;
+    setPlaying(true);
+    startPlayback();
   }
   function next(random = mode === "shuffle") {
     const options = tracks.filter((t) => t.id !== track);
@@ -222,6 +237,14 @@ export default function Music({ onError }) {
               onChange={(e) => setVolume(Number(e.target.value))}
             />
             <span>{Math.round(volume * 100)}%</span>
+          </label>
+          <label className="victory-music-option">
+            <input
+              type="checkbox"
+              checked={victoryEnabled}
+              onChange={(e) => onVictoryToggle(e.target.checked)}
+            />
+            胜利音乐
           </label>
         </section>
       )}

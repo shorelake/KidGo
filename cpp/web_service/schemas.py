@@ -66,6 +66,9 @@ class SavedAnalysis(BaseModel):
 
 
 class Record(Position):
+    aiLevel: Literal["starter", "beginner", "standard", "advanced", "expert"] = "standard"
+    # Keep legacy 1/8-stone goals readable in saved records.
+    captureTarget: Literal[0, 1, 3, 5, 7, 8, 13, 21] = 0
     title: str = Field(default="未命名棋谱", min_length=1, max_length=120)
     black: str = Field(default="黑方", max_length=120)
     white: str = Field(default="白方", max_length=120)

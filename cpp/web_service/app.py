@@ -17,6 +17,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from .engine import Engine
 from .schemas import AnalysisRequest, Position, Record
 from .go import replay
+from .scoring import score_position
 from .records import Store, import_sgf, export_sgf
 from .settings import ROOT, Settings
 
@@ -212,6 +213,17 @@ def create_app(settings=None, engine=None):
         except RuntimeError as exc:
             raise HTTPException(503, str(exc)) from None
         return job.snapshot()
+
+    class ScoreRequest(BaseModel):
+        position: Position
+        deadStones: list[str] = Field(default_factory=list, max_length=361)
+
+    @app.post("/api/score")
+    def score(body: ScoreRequest, identity=Depends(owner)):
+        try:
+            return score_position(body.position, body.deadStones)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
 
     @app.post("/api/position")
     def position(body: Position, identity=Depends(owner)):

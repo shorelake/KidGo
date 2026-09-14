@@ -149,7 +149,12 @@ test("small boards, practice hints and original music", async ({ page }) => {
   await page.getByRole("button", { name: "创建", exact: true }).click();
   await page.getByRole("button", { name: "提示一手", exact: true }).click();
   await expect(page.locator(".candidate").first()).toBeVisible();
-  await page.getByRole("button", { name: "播放音乐", exact: true }).click();
+  if (
+    await page
+      .getByRole("button", { name: "播放音乐", exact: true })
+      .isVisible()
+  )
+    await page.getByRole("button", { name: "播放音乐", exact: true }).click();
   await expect
     .poll(() => page.locator("audio").evaluate((a) => a.currentTime))
     .toBeGreaterThan(0.1);

@@ -1,5 +1,12 @@
 import React, { useState } from "react";
-import { Search, RefreshCw, X, FileText, Pencil, Trash2 } from "lucide-react";
+import {
+  Search,
+  RefreshCw,
+  PanelLeftClose,
+  FileText,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 
 export default function HistorySidebar({
   games,
@@ -40,11 +47,11 @@ export default function HistorySidebar({
             </button>
             <button
               className="icon-button history-close"
-              title="关闭历史导航"
-              aria-label="关闭历史导航"
+              title="收起历史棋局"
+              aria-label="收起历史棋局"
               onClick={onClose}
             >
-              <X size={17} />
+              <PanelLeftClose size={17} />
             </button>
           </div>
         </div>

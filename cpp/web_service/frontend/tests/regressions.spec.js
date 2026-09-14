@@ -319,6 +319,7 @@ test("saved analysis explains white losses and opens the position before the mov
     fullPage: true,
   });
   await page.setViewportSize({ width: 320, height: 740 });
+  await page.getByRole("button", { name: "分析浮层", exact: true }).click();
   await explanation.scrollIntoViewIfNeeded();
   await page.screenshot({
     path: "test-results/learning-mobile.png",
@@ -362,6 +363,7 @@ test("four audible tracks support selection, loop and random advancement", async
     expect(song.rms).toBeGreaterThan(0.01);
     expect(song.peak).toBeLessThan(0.99);
   }
+  await page.getByRole("button", { name: "暂停音乐", exact: true }).click();
   await page.getByRole("button", { name: "音乐设置", exact: true }).click();
   await expect(
     page.getByLabel("音乐曲目", { exact: true }).locator("option"),
@@ -372,7 +374,12 @@ test("four audible tracks support selection, loop and random advancement", async
   expect(await page.locator("audio").evaluate((a) => a.paused && a.loop)).toBe(
     true,
   );
-  await page.getByRole("button", { name: "播放音乐", exact: true }).click();
+  if (
+    await page
+      .getByRole("button", { name: "播放音乐", exact: true })
+      .isVisible()
+  )
+    await page.getByRole("button", { name: "播放音乐", exact: true }).click();
   await expect
     .poll(() => page.locator("audio").evaluate((a) => a.currentTime))
     .toBeGreaterThan(0.1);

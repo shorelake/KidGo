@@ -23,11 +23,24 @@ import {
   Check,
   Lightbulb,
   PanelLeft,
+  Volume2,
+  VolumeX,
+  ChevronDown,
 } from "lucide-react";
 import Board from "./Board";
 import Music from "./Music";
 import HistorySidebar from "./HistorySidebar";
 import AnalysisExplanation from "./AnalysisExplanation";
+import Scoring from "./Scoring";
+import { levels, chooseBotMove, practiceResult, resultLabel } from "./gameplay";
+import {
+  unlockStoneSound,
+  playStoneSound,
+  playVictoryMusic,
+  stopVictoryMusic,
+} from "./stoneSound";
+import { isHumanVictory } from "./victoryMusic";
+import { namePrefixes, nextGameName } from "./naming";
 import { api, emptyGame, positionOf, percent, score } from "./api";
 import "./style.css";
 
@@ -39,6 +52,8 @@ const newRecord = () => ({
   result: "",
   comments: {},
   analyses: {},
+  aiLevel: "standard",
+  captureTarget: 0,
 });
 const blank = (size) => ({
   board: Array.from({ length: size }, () => Array(size).fill("")),
@@ -87,6 +102,49 @@ function Modal({ title, onClose, children }) {
 }
 
 function App() {
+  const [victoryEnabled, setVictoryEnabled] = useState(
+    () => localStorage.getItem("katago-victory-music") !== "off",
+  );
+  const [celebrating, setCelebrating] = useState(false);
+  useEffect(() => {
+    const hide = () => {
+      if (document.hidden) stopVictoryMusic();
+    };
+    document.addEventListener("visibilitychange", hide);
+    return () => {
+      document.removeEventListener("visibilitychange", hide);
+      stopVictoryMusic();
+    };
+  }, []);
+  const [historyCollapsed, setHistoryCollapsed] = useState(
+    () => localStorage.getItem("katago-history-collapsed") === "true",
+  );
+  const [isPhone, setIsPhone] = useState(
+    () => window.matchMedia("(max-width: 600px)").matches,
+  );
+  const [phonePanel, setPhonePanel] = useState(null);
+  const draftAutoName = useRef("");
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 600px)");
+    const change = () => {
+      setIsPhone(query.matches);
+      if (!query.matches) setPhonePanel(null);
+    };
+    query.addEventListener("change", change);
+    return () => query.removeEventListener("change", change);
+  }, []);
+  const [sound, setSound] = useState(
+    () => localStorage.getItem("katago-stone-sound") !== "off",
+  );
+  useEffect(() => {
+    if (!sound && !victoryEnabled) return;
+    document.addEventListener("pointerdown", unlockStoneSound);
+    document.addEventListener("keydown", unlockStoneSound);
+    return () => {
+      document.removeEventListener("pointerdown", unlockStoneSound);
+      document.removeEventListener("keydown", unlockStoneSound);
+    };
+  }, [sound, victoryEnabled]);
   const [record, setRecord] = useState(newRecord),
     [cursor, setCursor] = useState(0),
     [position, setPosition] = useState(blank(19));
@@ -96,6 +154,9 @@ function App() {
   const [mode, setMode] = useState("review"),
     [human, setHuman] = useState("B"),
     [paused, setPaused] = useState(false);
+  useEffect(() => {
+    setPhonePanel(null);
+  }, [mode]);
   const [visits, setVisits] = useState(500),
     [auto, setAuto] = useState(false),
     [ownership, setOwnership] = useState(false),
@@ -413,7 +474,7 @@ function App() {
       const result = (snapshot.results || []).find(
         (r) => r.turnNumber === current.turn,
       );
-      const move = result?.moveInfos?.find((m) => m.order === 0)?.move;
+      const move = chooseBotMove(result, recordRef.current.aiLevel);
       if (move) play(move, true);
       else {
         setPaused(true);
@@ -448,6 +509,7 @@ function App() {
   }
   async function analyze(kind = "single") {
     if (task.current || moving.current || submitting.current) return;
+    if (isPhone && kind !== "bot") setPhonePanel("analysis");
     const currentRecord = recordRef.current;
     const nextPlayer = cursorRef.current
       ? currentRecord.moves[cursorRef.current - 1][0] === "B"
@@ -477,7 +539,7 @@ function App() {
         avoidEarlyPass: kind === "bot",
         maxVisits:
           kind === "bot"
-            ? Math.max(32, Number(stateRef.current.visits))
+            ? (levels[currentRecord.aiLevel] || levels.standard).visits
             : Number(stateRef.current.visits),
         includeOwnership: stateRef.current.ownership,
         ...(kind === "whole"
@@ -544,12 +606,29 @@ function App() {
         ),
       };
       const board = await api("/position", positionOf(next));
+      if (s.mode === "practice") {
+        const target = next.captureTarget || 3;
+        next.captureTarget = target;
+        next.result =
+          practiceResult(board.captures, target) || (board.ended ? "0" : "");
+        if (next.result) {
+          next.comments[next.moves.length] =
+            `吃子练习：净提子领先 ${target} 子获胜。黑提 ${board.captures.B}，白提 ${board.captures.W}。${resultLabel(next.result)}`;
+          setPaused(true);
+        }
+      }
       update(next);
+      if (sound && move !== "pass") playStoneSound();
+      celebrate(next.result, s.mode, s.human, current.result);
       cursorRef.current = next.moves.length;
       setCursor(next.moves.length);
       setPosition(board);
       setLive(null);
       setPreview(null);
+      if (board.ended && s.mode === "play") {
+        setPaused(true);
+        setModal("score");
+      }
     } catch (e) {
       if (bot) setPaused(true);
       fail(e);
@@ -583,6 +662,8 @@ function App() {
     restoring = false,
     turn = next.moves.length,
   ) {
+    setPhonePanel(null);
+    stopVictoryMusic();
     setBusy(true);
     documentEpoch.current++;
     autoSaveFailed.current = false;
@@ -815,34 +896,101 @@ function App() {
     update({ ...recordRef.current, result: human === "B" ? "W+R" : "B+R" });
     setPaused(true);
   }
+  async function confirmScore(score) {
+    const current = recordRef.current;
+    const won = isHumanVictory(score.result, human, mode, current.result);
+    update({
+      ...current,
+      result: score.result,
+      comments: {
+        ...current.comments,
+        [current.moves.length]: [
+          current.comments[current.moves.length],
+          `终局计分：黑 ${score.black}，白 ${score.white}（含贴目 ${score.komi}）；死子 ${score.deadStones.join("、") || "无"}。${resultLabel(score.result)}`,
+        ]
+          .filter(Boolean)
+          .join("\n")
+          .slice(0, 4000),
+      },
+    });
+    setPaused(true);
+    setModal(null);
+    if (won) celebrate(score.result, mode, human, current.result);
+    await save({ quiet: true });
+  }
+  function celebrate(result, playMode, player, previousResult) {
+    if (
+      victoryEnabled &&
+      isHumanVictory(result, player, playMode, previousResult)
+    ) {
+      setCelebrating(playVictoryMusic(() => setCelebrating(false)));
+    }
+  }
+  async function resumeFromScoring() {
+    const current = recordRef.current,
+      turn = current.moves.length - 2;
+    const next = {
+      ...current,
+      result: "",
+      moves: current.moves.slice(0, turn),
+      analyses: Object.fromEntries(
+        Object.entries(current.analyses).filter(([t]) => Number(t) <= turn),
+      ),
+      comments: Object.fromEntries(
+        Object.entries(current.comments).filter(([t]) => Number(t) <= turn),
+      ),
+    };
+    await loadRecord(next, identityRef.current);
+    setMode("play");
+    setPaused(false);
+    setDirty(true);
+  }
   async function beginNew() {
     if (dirty && mode !== "review" && recordRef.current.moves.length) {
       if (!(await save({ quiet: true }))) return;
     } else if (dirty && !window.confirm("当前棋谱有未保存修改，继续新建？"))
       return;
-    let counter = Number(localStorage.getItem("katago-practice-counter")) || 0;
-    for (const game of [...library, recordRef.current]) {
-      const match = /^练习(\d+)$/.exec(game.title);
-      if (match) counter = Math.max(counter, Number(match[1]));
-    }
-    setDraft({ ...newRecord(), title: `练习${counter + 1}` });
+    const title = defaultTitle("play");
+    draftAutoName.current = title;
+    setDraft({ ...newRecord(), title });
     setDraftMode("play");
     setModal("new");
   }
+  function defaultTitle(newMode) {
+    const prefix = namePrefixes[newMode];
+    const counter = Math.max(
+      Number(localStorage.getItem("katago-name-counter-" + prefix)) || 0,
+      prefix === "练习"
+        ? Number(localStorage.getItem("katago-practice-counter")) || 0
+        : 0,
+    );
+    return nextGameName(newMode, [...library, recordRef.current], counter);
+  }
+  function changeDraftMode(newMode) {
+    const title = defaultTitle(newMode);
+    if (draft.title === draftAutoName.current) setDraft({ ...draft, title });
+    draftAutoName.current = title;
+    setDraftMode(newMode);
+  }
   async function createNew(e) {
     e.preventDefault();
-    const next = { ...draft };
+    const next = {
+      ...draft,
+      captureTarget: draftMode === "practice" ? draft.captureTarget || 3 : 0,
+    };
     if (next.title === "未命名棋谱" && draftMode !== "review")
       next.title = `${next.size} 路${draftMode === "practice" ? "练习" : "对弈"} · ${new Date().toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}`;
     await loadRecord(next);
-    const sequence = /^练习(\d+)$/.exec(next.title);
+    const sequence = /^(练习|启蒙|复盘)(\d+)$/.exec(next.title);
     if (sequence)
       localStorage.setItem(
-        "katago-practice-counter",
+        "katago-name-counter-" + sequence[1],
         String(
           Math.max(
-            Number(localStorage.getItem("katago-practice-counter")) || 0,
-            Number(sequence[1]),
+            Number(
+              localStorage.getItem("katago-name-counter-" + sequence[1]),
+            ) || 0,
+            Number(sequence[2]),
           ),
         ),
       );
@@ -865,6 +1013,7 @@ function App() {
       numbers[m] = i + 1;
     });
   const canPlay =
+    !(isPhone && phonePanel) &&
     !busy &&
     !job &&
     !preview &&
@@ -951,7 +1100,29 @@ function App() {
           <span>围棋工作台</span>
         </div>
         <div className="header-right">
-          <Music onError={fail} />
+          <Music
+            onError={fail}
+            victoryEnabled={victoryEnabled}
+            celebrating={celebrating}
+            onVictoryToggle={(enabled) => {
+              setVictoryEnabled(enabled);
+              localStorage.setItem(
+                "katago-victory-music",
+                enabled ? "on" : "off",
+              );
+              if (!enabled) stopVictoryMusic();
+              else unlockStoneSound();
+            }}
+          />
+          <IconButton
+            icon={sound ? Volume2 : VolumeX}
+            label={sound ? "关闭落子音效" : "开启落子音效"}
+            onClick={() => {
+              setSound(!sound);
+              localStorage.setItem("katago-stone-sound", sound ? "off" : "on");
+              if (!sound) unlockStoneSound();
+            }}
+          />
           <span className={"engine-status " + (health.ready ? "online" : "")}>
             <Activity size={15} />
             {health.ready ? "引擎就绪" : "引擎连接中"}
@@ -970,7 +1141,11 @@ function App() {
           )}
         </div>
       </header>
-      <div className="application-layout">
+      <div
+        className={
+          "application-layout" + (historyCollapsed ? " history-collapsed" : "")
+        }
+      >
         <HistorySidebar
           games={library}
           activeId={identity?.id}
@@ -980,7 +1155,13 @@ function App() {
           onDelete={deleteGame}
           error={libraryError}
           open={historyOpen}
-          onClose={() => setHistoryOpen(false)}
+          onClose={() => {
+            setHistoryOpen(false);
+            if (window.matchMedia("(min-width: 1101px)").matches) {
+              setHistoryCollapsed(true);
+              localStorage.setItem("katago-history-collapsed", "true");
+            }
+          }}
           disabled={busy || saving}
         />
         <div className="workbench">
@@ -1002,7 +1183,13 @@ function App() {
                 <IconButton
                   icon={PanelLeft}
                   label="历史棋局"
-                  onClick={() => setHistoryOpen(true)}
+                  onClick={() => {
+                    setHistoryOpen(
+                      window.matchMedia("(max-width: 1100px)").matches,
+                    );
+                    setHistoryCollapsed(false);
+                    localStorage.setItem("katago-history-collapsed", "false");
+                  }}
                 />
               </span>
               <IconButton
@@ -1061,7 +1248,11 @@ function App() {
               />
             </div>
           )}
-          <main className="workspace">
+          <main
+            className={
+              "workspace" + (phonePanel ? " phone-panel-" + phonePanel : "")
+            }
+          >
             <section className="board-section">
               <div className="section-heading">
                 <div className="segmented" aria-label="模式">
@@ -1071,6 +1262,8 @@ function App() {
                     onClick={async () => {
                       await stop();
                       setMode("practice");
+                      if (!recordRef.current.captureTarget)
+                        update({ ...recordRef.current, captureTarget: 3 });
                       setAuto(false);
                       setPaused(false);
                     }}
@@ -1113,7 +1306,8 @@ function App() {
                   <small>提 {position.captures.B}</small>
                 </div>
                 <span className="turn-label">
-                  {record.result ||
+                  {(cursor === record.moves.length &&
+                    resultLabel(record.result)) ||
                     (position.ended
                       ? "双方停一手"
                       : `第 ${cursor} 手${record.moves[cursor - 1]?.[1] === "pass" ? ` · ${record.moves[cursor - 1][0] === "B" ? "黑" : "白"}方停一手` : ""}`)}
@@ -1124,6 +1318,36 @@ function App() {
                   <span className="stone-dot white" />
                 </div>
               </div>
+              {mode === "practice" && (
+                <p className="practice-progress">
+                  吃子目标：净领先 {record.captureTarget || 3} 子 · 黑提{" "}
+                  {position.captures.B} / 白提 {position.captures.W}
+                </p>
+              )}
+              {record.result && cursor === record.moves.length && (
+                <div className="game-outcome" role="status">
+                  {resultLabel(record.result)}
+                  {record.result.endsWith("+Capture")
+                    ? ` · 净提子领先 ${record.captureTarget} 子目标已达成`
+                    : record.result.endsWith("+R")
+                      ? " · 认输结束"
+                      : ""}
+                </div>
+              )}
+              {position.ended &&
+                !record.result &&
+                cursor === record.moves.length && (
+                  <button
+                    className="primary"
+                    onClick={() => {
+                      setPaused(true);
+                      setModal("score");
+                    }}
+                    disabled={busy || !!job}
+                  >
+                    终局计分
+                  </button>
+                )}
               <Board
                 size={record.size}
                 board={previewBoard?.board || position.board}
@@ -1229,6 +1453,25 @@ function App() {
               {mode !== "review" && (
                 <div className="play-settings">
                   <label>
+                    AI 强度
+                    <select
+                      aria-label="AI 强度"
+                      value={record.aiLevel || "standard"}
+                      disabled={busy || !!job || !!record.result}
+                      onChange={async (e) => {
+                        const aiLevel = e.target.value;
+                        await stop();
+                        update({ ...recordRef.current, aiLevel });
+                      }}
+                    >
+                      {Object.entries(levels).map(([key, value]) => (
+                        <option key={key} value={key}>
+                          {value.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
                     执子
                     <select
                       aria-label="执子"
@@ -1265,9 +1508,42 @@ function App() {
                   />
                 </div>
               )}
-              <div className="review-chart">
+              <div className="mobile-analysis-dock" aria-label="手机分析视图">
+                <button
+                  aria-label="局势浮层"
+                  aria-expanded={phonePanel === "chart"}
+                  aria-controls="position-chart"
+                  className={phonePanel === "chart" ? "selected" : ""}
+                  onClick={() =>
+                    setPhonePanel(phonePanel === "chart" ? null : "chart")
+                  }
+                >
+                  <Activity size={17} />
+                  局势
+                </button>
+                <button
+                  aria-label="分析浮层"
+                  aria-expanded={phonePanel === "analysis"}
+                  aria-controls="position-analysis"
+                  className={phonePanel === "analysis" ? "selected" : ""}
+                  onClick={() =>
+                    setPhonePanel(phonePanel === "analysis" ? null : "analysis")
+                  }
+                >
+                  <Lightbulb size={17} />
+                  分析
+                </button>
+              </div>
+              <div className="review-chart" id="position-chart">
                 <div className="section-heading">
                   <h2>局势变化</h2>
+                  <span className="mobile-panel-close">
+                    <IconButton
+                      icon={ChevronDown}
+                      label="收起局势"
+                      onClick={() => setPhonePanel(null)}
+                    />
+                  </span>
                   <div className="chart-legend">
                     <span>黑方胜率</span>
                     <span>黑方目差</span>
@@ -1278,17 +1554,20 @@ function App() {
                   role="img"
                   aria-label="胜率与目差曲线"
                   onClick={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
+                    const transform = e.currentTarget.getScreenCTM();
+                    if (!transform) return;
+                    // Include viewBox scaling and letterboxing in the hit test.
+                    const point = new DOMPoint(
+                      e.clientX,
+                      e.clientY,
+                    ).matrixTransform(transform.inverse());
                     navigate(
                       Math.max(
                         0,
                         Math.min(
                           record.moves.length,
                           Math.round(
-                            ((((e.clientX - rect.left) / rect.width) * 400 -
-                              12) /
-                              376) *
-                              record.moves.length,
+                            ((point.x - 12) / 376) * record.moves.length,
                           ),
                         ),
                       ),
@@ -1343,9 +1622,16 @@ function App() {
                 </svg>
               </div>
             </section>
-            <aside>
+            <aside className="analysis-aside" id="position-analysis">
               <div className="section-heading">
                 <h2>局面分析</h2>
+                <span className="mobile-panel-close">
+                  <IconButton
+                    icon={ChevronDown}
+                    label="收起分析"
+                    onClick={() => setPhonePanel(null)}
+                  />
+                </span>
                 <span>黑方视角</span>
               </div>
               <div className="metrics">
@@ -1454,6 +1740,7 @@ function App() {
                     onClick={() => {
                       setPreview(m);
                       setPvStep(Math.min(1, m.pv.length));
+                      if (isPhone) setPhonePanel(null);
                     }}
                     disabled={!m.pv?.length}
                   >
@@ -1554,7 +1841,7 @@ function App() {
                   <select
                     aria-label="新建模式"
                     value={draftMode}
-                    onChange={(e) => setDraftMode(e.target.value)}
+                    onChange={(e) => changeDraftMode(e.target.value)}
                   >
                     <option value="play">人机对弈</option>
                     <option value="practice">启蒙练习</option>
@@ -1610,6 +1897,47 @@ function App() {
                 />
               </label>
             </div>
+            {modal === "new" && draftMode !== "review" && (
+              <div className="form-columns">
+                <label>
+                  AI 强度
+                  <select
+                    aria-label="新局 AI 强度"
+                    value={draft.aiLevel || "standard"}
+                    onChange={(e) =>
+                      setDraft({ ...draft, aiLevel: e.target.value })
+                    }
+                  >
+                    {Object.entries(levels).map(([key, value]) => (
+                      <option key={key} value={key}>
+                        {value.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {draftMode === "practice" && (
+                  <label>
+                    吃子级别
+                    <select
+                      aria-label="吃子级别"
+                      value={draft.captureTarget || 3}
+                      onChange={(e) =>
+                        setDraft({
+                          ...draft,
+                          captureTarget: Number(e.target.value),
+                        })
+                      }
+                    >
+                      {[3, 5, 7, 13, 21].map((target, index) => (
+                        <option key={target} value={target}>
+                          {index + 1} 级 · 净领先 {target} 子
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+              </div>
+            )}
             {modal === "new" ? (
               <>
                 <div className="form-columns">
@@ -1665,6 +1993,16 @@ function App() {
               {modal === "new" ? "创建" : "保存信息"}
             </button>
           </form>
+        </Modal>
+      )}
+      {modal === "score" && (
+        <Modal title="终局计分 · 确认死子" onClose={() => setModal(null)}>
+          <Scoring
+            record={record}
+            board={position.board}
+            onConfirm={confirmScore}
+            onResume={resumeFromScoring}
+          />
         </Modal>
       )}
       {modal === "library" && (
