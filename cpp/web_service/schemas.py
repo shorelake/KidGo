@@ -1,6 +1,9 @@
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+OpponentModel = Literal["human", "L9", "L6", "L2"]
+RANK_PATTERN = r"^rank_(?:[1-9]k|1[0-9]k|20k|[1-9]d)$"
+
 
 class Position(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -19,6 +22,9 @@ class Position(BaseModel):
 
 
 class AnalysisRequest(Position):
+    purpose: Literal["analysis", "play"] = "analysis"
+    opponentModel: OpponentModel = "human"
+    humanRank: str = Field(default="rank_20k", pattern=RANK_PATTERN)
     maxVisits: int = Field(default=500, ge=1, le=10000)
     analyzeTurns: list[int] | None = Field(default=None, min_length=1, max_length=1001)
     includeOwnership: bool = False
@@ -26,13 +32,15 @@ class AnalysisRequest(Position):
 
     @model_validator(mode="after")
     def validate_turns(self):
+        if self.purpose == "play" and self.analyzeTurns is not None:
+            raise ValueError("对弈落子只允许分析当前局面")
         if self.analyzeTurns is not None:
             if len(set(self.analyzeTurns)) != len(self.analyzeTurns) or any(t < 0 or t > len(self.moves) for t in self.analyzeTurns):
                 raise ValueError("分析手数超出棋谱范围或重复")
         return self
 
     def engine_query(self):
-        result = self.model_dump(exclude={"size", "avoidEarlyPass"}, exclude_none=True)
+        result = self.model_dump(exclude={"size", "avoidEarlyPass", "purpose", "opponentModel", "humanRank"}, exclude_none=True)
         result.update(boardXSize=self.size, boardYSize=self.size, reportDuringSearchEvery=0.25, analysisPVLen=16)
         # Small-board teaching games should develop an opening before passing.
         if (self.avoidEarlyPass and self.size <= 7 and not self.initialStones
@@ -59,13 +67,32 @@ class MoveInfo(BaseModel):
     pv: list[str] = Field(default_factory=list, max_length=64)
 
 
+class AnalysisProvenance(BaseModel):
+    modelId: Literal["human", "L9", "L7", "L6", "L3", "L2", "L1"]
+    modelName: str = Field(max_length=160)
+    purpose: Literal["analysis", "play"]
+    maxVisits: int = Field(ge=1, le=10000)
+    humanRank: str | None = Field(default=None, pattern=RANK_PATTERN)
+    searchModel: str | None = Field(default=None, max_length=160)
+
+
 class SavedAnalysis(BaseModel):
+    provenance: AnalysisProvenance | None = None
     rootInfo: RootInfo
     moveInfos: list[MoveInfo] = Field(default_factory=list, max_length=8)
     turnNumber: int = Field(ge=0, le=1000)
 
 
 class Record(Position):
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_retired_opponent(cls, data):
+        if isinstance(data, dict) and data.get("opponentModel") in {"L1", "L3", "L7"}:
+            return {**data, "opponentModel": {"L1": "L2", "L3": "L6", "L7": "L6"}[data["opponentModel"]]}
+        return data
+
+    opponentModel: OpponentModel = "human"
+    humanRank: str = Field(default="rank_20k", pattern=RANK_PATTERN)
     aiLevel: Literal["starter", "beginner", "standard", "advanced", "expert"] = "standard"
     # Keep legacy 1/8-stone goals readable in saved records.
     captureTarget: Literal[0, 1, 3, 5, 7, 8, 13, 21] = 0

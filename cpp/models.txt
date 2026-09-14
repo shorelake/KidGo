@@ -1,0 +1,43 @@
+KataGo Web model download manifest
+
+Model directory: ./web_service/models/
+Download active models (from cpp):
+  conda run -n go python -m web_service.download_models
+Override directory: --directory PATH or KATAGO_MODEL_DIR
+Model binaries and generated checksums are excluded from Git.
+
+ACTIVE MODELS
+
+Human SL - rank_20k through rank_1k, rank_1d through rank_9d
+File: b18c384nbt-humanv0.bin.gz
+URL: https://github.com/lightvector/KataGo/releases/download/v1.15.0/b18c384nbt-humanv0.bin.gz
+Uses L9 as its auxiliary search model for pass decisions.
+
+L2 - opponent
+File: kata1-b10c128-s41138688-d27396855.txt.gz
+URL: https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-b10c128-s41138688-d27396855.txt.gz
+
+L6 - opponent
+File: kata1-b18c384nbt-s8617907712-d3952620469.bin.gz
+URL: https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-b18c384nbt-s8617907712-d3952620469.bin.gz
+
+L9 - fixed analysis teacher and selectable opponent
+File: kata1-tf3-b11c768-s11001M-d5973M.bin.gz
+URL: https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-tf3-b11c768-s11001M-d5973M.bin.gz
+
+RETIRED MODELS (reference only; deleted locally, not downloaded or selectable)
+
+L1
+File: kata1-b6c96-s1995008-d1329786.txt.gz
+URL: https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-b6c96-s1995008-d1329786.txt.gz
+
+L3
+File: kata1-b40c256-s5328718336-d1283036879.bin.gz
+URL: https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-b40c256-s5328718336-d1283036879.bin.gz
+
+L7
+File: kata1-b28c512nbt-s8150702336-d4580586647.bin.gz
+URL: https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-b28c512nbt-s8150702336-d4580586647.bin.gz
+
+Network catalog: https://katagotraining.org/networks/
+Labels L2/L6/L9 are application tiers, not calibrated human ranks.

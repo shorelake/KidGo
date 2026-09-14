@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
 from .engine import Engine
+from .engine_pool import EnginePool
 from .schemas import AnalysisRequest, Position, Record
 from .go import replay
 from .scoring import score_position
@@ -32,7 +33,7 @@ def create_app(settings=None, engine=None):
             f.write(secrets.token_hex(32))
     except FileExistsError:
         pass
-    engine = engine or Engine(settings)
+    engine = engine or EnginePool(settings)
     store = Store(settings.data / "games.sqlite3")
 
     @asynccontextmanager
@@ -198,6 +199,7 @@ def create_app(settings=None, engine=None):
         return JSONResponse({"ready": engine.ready, "status": "ready" if engine.ready else "starting",
                              "version": engine.version, "model": settings.model.name,
                              "activeJobs": sum(j.active for j in engine.jobs.values()),
+                             "models": engine.catalog() if isinstance(engine, EnginePool) else [],
                              "restarts": engine.restarts}, status_code=200 if engine.ready else 503)
 
     @app.post("/api/analyze", status_code=202)
@@ -207,7 +209,8 @@ def create_app(settings=None, engine=None):
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from None
         try:
-            job = await engine.submit(identity, body.engine_query())
+            routing = dict(purpose=body.purpose, opponent_model=body.opponentModel, human_rank=body.humanRank)
+            job = await engine.submit(identity, body.engine_query(), **(routing if isinstance(engine, EnginePool) else {}))
         except OverflowError as exc:
             raise HTTPException(429, str(exc)) from None
         except RuntimeError as exc:

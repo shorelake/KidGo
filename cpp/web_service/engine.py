@@ -5,6 +5,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
+from .models import human_move
 
 log = logging.getLogger("katago.engine")
 
@@ -21,6 +22,7 @@ class Job:
     finished_turns: set = field(default_factory=set)
     error: str | None = None
     cancel_deadline: float | None = None
+    provenance: dict = field(default_factory=dict)
 
     @property
     def turns(self):
@@ -76,7 +78,9 @@ class Engine:
                         raise RuntimeError(f"File not found: {path}")
                 self.process = await asyncio.create_subprocess_exec(
                     str(s.binary.resolve()), "analysis", "-model", str(s.model.resolve()),
-                    "-config", str(s.config.resolve()), "-override-config", "reportAnalysisWinratesAs=BLACK",
+                    *(["-human-model", str(s.human_model.resolve())] if s.human_model else []),
+                    "-config", str(s.config.resolve()), "-override-config",
+                    f"reportAnalysisWinratesAs=BLACK,cudaDeviceToUse={s.gpu}",
                     "-quit-without-waiting", cwd=s.data,
                     stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE, limit=4 * 1024 * 1024)
@@ -130,7 +134,7 @@ class Engine:
             self.process.stdin.write((json.dumps(message, separators=(",", ":")) + "\n").encode())
             await asyncio.wait_for(self.process.stdin.drain(), 10)
 
-    async def submit(self, owner, query):
+    async def submit(self, owner, query, provenance=None):
         if not self.ready:
             raise RuntimeError("分析引擎尚未就绪")
         active = [j for j in self.jobs.values() if j.active]
@@ -142,6 +146,7 @@ class Engine:
         identifier = uuid.uuid4().hex
         query = {**query, "id": identifier}
         job = Job(identifier, owner, query, time.monotonic() + min(1800, self.settings.timeout + turns * 5))
+        job.provenance = provenance or {}
         self.jobs[identifier] = job
         try:
             await self.write(query)
@@ -173,6 +178,16 @@ class Engine:
         if turn not in job.turns:
             return
         if job.status == "running" and not message.get("noResults"):
+            message["provenance"] = job.provenance
+            if job.provenance.get("modelId") == "human" and message.get("isDuringSearch") is False:
+                try:
+                    message["selectedMove"] = human_move(message, job.query)
+                except ValueError as exc:
+                    job.status, job.error = "failed", str(exc)
+                    self.emit(job, {"type": "status", **job.snapshot()})
+                    return
+            message.pop("humanPolicy", None)
+            message.pop("policy", None)
             if "moveInfos" in message:
                 message["moveInfos"] = sorted(message["moveInfos"], key=lambda m: m["order"])[:8]
             job.results[turn] = message

@@ -32,6 +32,7 @@ import Music from "./Music";
 import HistorySidebar from "./HistorySidebar";
 import AnalysisExplanation from "./AnalysisExplanation";
 import Scoring from "./Scoring";
+import OpponentSettings from "./OpponentSettings";
 import { levels, chooseBotMove, practiceResult, resultLabel } from "./gameplay";
 import {
   unlockStoneSound,
@@ -60,6 +61,8 @@ const newRecord = () => ({
   comments: {},
   analyses: {},
   aiLevel: "standard",
+  opponentModel: "human",
+  humanRank: "rank_20k",
   captureTarget: 0,
 });
 const blank = (size) => ({
@@ -69,6 +72,7 @@ const blank = (size) => ({
   ended: false,
 });
 const compact = (result) => ({
+  provenance: result.provenance,
   turnNumber: result.turnNumber,
   rootInfo: result.rootInfo,
   moveInfos: (result.moveInfos || [])
@@ -458,7 +462,7 @@ function App() {
   }, []);
 
   function applyResult(result) {
-    if (!result.rootInfo) return;
+    if (!result.rootInfo || task.current?.kind === "bot") return;
     setLive(result);
     if (!result.isDuringSearch) {
       const current = recordRef.current;
@@ -494,7 +498,10 @@ function App() {
       const result = (snapshot.results || []).find(
         (r) => r.turnNumber === current.turn,
       );
-      const move = chooseBotMove(result, recordRef.current.aiLevel);
+      const move =
+        (recordRef.current.opponentModel || "human") === "human"
+          ? result?.selectedMove
+          : chooseBotMove(result, recordRef.current.aiLevel);
       if (move) play(move, true);
       else {
         setPaused(true);
@@ -557,6 +564,9 @@ function App() {
       );
       const response = await api("/analyze", {
         ...base,
+        purpose: kind === "bot" ? "play" : "analysis",
+        opponentModel: currentRecord.opponentModel || "human",
+        humanRank: currentRecord.humanRank || "rank_20k",
         avoidEarlyPass: kind === "bot",
         maxVisits:
           kind === "bot"
@@ -685,6 +695,13 @@ function App() {
     restoring = false,
     turn = next.moves.length,
   ) {
+    next = {
+      ...next,
+      opponentModel:
+        { L1: "L2", L3: "L6", L7: "L6" }[next.opponentModel] ||
+        next.opponentModel ||
+        "human",
+    };
     setPhonePanel(null);
     stopVictoryMusic();
     setBusy(true);
@@ -1490,25 +1507,17 @@ function App() {
               />
               {mode !== "review" && (
                 <div className="play-settings">
-                  <label>
-                    AI 强度
-                    <select
-                      aria-label="AI 强度"
-                      value={record.aiLevel || "standard"}
-                      disabled={busy || !!job || !!record.result}
-                      onChange={async (e) => {
-                        const aiLevel = e.target.value;
-                        await stop();
-                        update({ ...recordRef.current, aiLevel });
-                      }}
-                    >
-                      {Object.entries(levels).map(([key, value]) => (
-                        <option key={key} value={key}>
-                          {value.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <OpponentSettings
+                    record={record}
+                    models={health.models}
+                    disabled={
+                      busy || (!!job && job.kind !== "hint") || !!record.result
+                    }
+                    onChange={async (settings) => {
+                      await stop();
+                      update({ ...recordRef.current, ...settings });
+                    }}
+                  />
                   <label>
                     执子
                     <select
@@ -1669,6 +1678,18 @@ function App() {
             <aside className="analysis-aside" id="position-analysis">
               <div className="section-heading">
                 <h2>局面分析</h2>
+                <span
+                  className="analysis-source"
+                  title={
+                    analysis?.provenance?.modelName || "旧记录未保存模型来源"
+                  }
+                >
+                  {analysis
+                    ? analysis.provenance?.purpose === "analysis"
+                      ? `老师 ${analysis.provenance.modelId}`
+                      : "旧分析 · 来源未记录"
+                    : "老师 L9"}
+                </span>
                 <span className="mobile-panel-close">
                   <IconButton
                     icon={ChevronDown}
@@ -1866,7 +1887,7 @@ function App() {
           </main>
           <footer>
             <span>KataGo {health.version || "1.18.2"} · CUDA</span>
-            <span title={health.model}>{health.model || "模型加载中"}</span>
+            <span title={health.model}>分析老师 L9</span>
             <span>{health.activeJobs || 0} 个分析任务</span>
           </footer>
         </div>
@@ -1959,22 +1980,12 @@ function App() {
             </div>
             {modal === "new" && draftMode !== "review" && (
               <div className="form-columns">
-                <label>
-                  AI 强度
-                  <select
-                    aria-label="新局 AI 强度"
-                    value={draft.aiLevel || "standard"}
-                    onChange={(e) =>
-                      setDraft({ ...draft, aiLevel: e.target.value })
-                    }
-                  >
-                    {Object.entries(levels).map(([key, value]) => (
-                      <option key={key} value={key}>
-                        {value.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <OpponentSettings
+                  record={draft}
+                  models={health.models}
+                  prefix="新局 "
+                  onChange={(settings) => setDraft({ ...draft, ...settings })}
+                />
                 {draftMode === "practice" && (
                   <label>
                     吃子级别
