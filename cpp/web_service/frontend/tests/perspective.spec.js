@@ -95,15 +95,26 @@ test("recommendations and analysis switch to the next player at each review turn
   });
 });
 
-test("after the white AI reply the human receives fresh black recommendations", async ({
+for (const mode of ["play", "practice"]) {
+test(`manual analysis after white reply in ${mode}`, async ({
   page,
 }) => {
   await login(page);
+  const requests = [];
+  page.on("request", request => {
+    if (request.method() === "POST" && request.url().endsWith("/api/analyze")) requests.push(request.postDataJSON());
+  });
   await page.getByRole("button", { name: "新建棋局", exact: true }).click();
+  await page.getByLabel("新建模式", { exact: true }).selectOption(mode);
   await page.getByLabel("棋盘", { exact: true }).selectOption("5");
   await page.getByRole("button", { name: "创建", exact: true }).click();
   await page.getByRole("button", { name: "C3", exact: true }).dblclick();
   await expect(page.locator(".move-counter")).toHaveText("2 / 2");
+  await page.waitForTimeout(1200);
+  expect(requests).toHaveLength(1);
+  expect(requests[0].purpose).toBe("play");
+  await expect(page.locator(".recommendation-marker")).toHaveCount(0);
+  await page.getByRole("button", { name: "分析局面", exact: true }).click();
   await expect(page.locator(".recommendation-label")).toHaveText(
     "黑方推荐 · 第 3 手",
   );
@@ -112,4 +123,12 @@ test("after the white AI reply the human receives fresh black recommendations", 
     "B",
   );
   await expect(page.locator(".analysis-perspective")).toContainText("黑方");
+  const count = await page.locator(".recommendation-marker").count();
+  await page.getByRole("button", { name: "隐藏推荐落点", exact: true }).click();
+  await expect(page.locator(".recommendation-marker")).toHaveCount(0);
+  await expect(page.locator(".recommendation-label")).toHaveCount(0);
+  await expect(page.locator(".candidate").first()).toBeVisible();
+  await page.getByRole("button", { name: "显示推荐落点", exact: true }).click();
+  await expect(page.locator(".recommendation-marker")).toHaveCount(count);
 });
+}

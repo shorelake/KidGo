@@ -105,6 +105,7 @@ test("model selectors, rank persistence and teacher-only hints on desktop and ph
   await expect(page.locator(".timeline")).toHaveAttribute("max", "2", {
     timeout: 90000,
   });
+  await page.getByRole("button", { name: "分析局面", exact: true }).click();
   await expect(page.locator(".recommendation-marker").first()).toBeVisible({
     timeout: 30000,
   });

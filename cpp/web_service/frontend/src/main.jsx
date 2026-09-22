@@ -26,6 +26,8 @@ import {
   Volume2,
   VolumeX,
   ChevronDown,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import Board from "./Board";
 import Music from "./Music";
@@ -169,6 +171,7 @@ function App() {
     setPhonePanel(null);
   }, [mode]);
   const [visits, setVisits] = useState(500),
+    [showRecommendations, setShowRecommendations] = useState(true),
     [auto, setAuto] = useState(false),
     [ownership, setOwnership] = useState(false),
     [showNumbers, setShowNumbers] = useState(false);
@@ -408,19 +411,12 @@ function App() {
       analyze("bot");
       return;
     }
-    const humanHint =
-      mode !== "review" &&
-      atEnd &&
-      !paused &&
-      !position.ended &&
-      !record.result &&
-      position.player === human;
     if (
-      (humanHint || (auto && mode === "review")) &&
+      auto && mode === "review" &&
       lastAutoKey.current !== analysisKey()
     ) {
       const timer = setTimeout(
-        () => analyze(humanHint ? "hint" : "single"),
+        () => analyze("single"),
         350,
       );
       return () => clearTimeout(timer);
@@ -1395,7 +1391,7 @@ function App() {
                     终局计分
                   </button>
                 )}
-              {!preview && candidates.length > 0 && (
+              {!preview && showRecommendations && candidates.length > 0 && (
                 <div
                   className="recommendation-label"
                   data-player={recommendationPlayer}
@@ -1410,7 +1406,7 @@ function App() {
                 player={position.player}
                 positionKey={`${documentEpoch.current}:${cursor}:${mode}`}
                 disabled={!canPlay}
-                candidates={preview ? [] : candidates.slice(0, 5)}
+                candidates={preview || !showRecommendations ? [] : candidates.slice(0, 5)}
                 lastMove={record.moves[cursor - 1]?.[1]}
                 ownership={ownership && !preview ? analysis?.ownership : null}
                 numbers={numbers}
@@ -1437,6 +1433,13 @@ function App() {
                 </div>
               )}
               <div className="board-toolbar">
+                <IconButton
+                  icon={showRecommendations ? Eye : EyeOff}
+                  label={showRecommendations ? "隐藏推荐落点" : "显示推荐落点"}
+                  aria-pressed={showRecommendations}
+                  disabled={!candidates.length || !!preview}
+                  onClick={() => setShowRecommendations(value => !value)}
+                />
                 {mode === "practice" && (
                   <IconButton
                     icon={Lightbulb}
